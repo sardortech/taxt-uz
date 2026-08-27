@@ -1,11 +1,12 @@
 "use client";
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState("ALL");
-  const [activeRankFilter, setActiveRankFilter] = useState("ALL"); // Top-3, Top-10, va h.k. uchun
+  const [activeRankFilter, setActiveRankFilter] = useState("ALL");
   const [properties, setProperties] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -118,7 +119,7 @@ export default function Home() {
 
   const requiredForTop1 = properties.length > 0 ? (properties[0].bid + 1000) : 30000;
 
-  // Social Proof ko'rsatkichlari (Pulsiz)
+  // Social Proof ko'rsatkichlari
   const totalClicks = properties.reduce((acc, curr) => acc + Number(curr.clicks || 0), 0);
   const top100Count = Math.min(properties.length, 100);
 
@@ -128,6 +129,7 @@ export default function Home() {
     setIsModalOpen(true);
   };
 
+  // MUKAMMAL TO'LOV VA REYTING BIRLASHTIRISH HANDLERI
   const handlePaymentSubmit = async () => {
     if (!formData.title || !formData.url) {
       alert("Iltimos, brend nomi va ssilkasini kiriting!");
@@ -139,59 +141,106 @@ export default function Home() {
       return;
     }
 
-    const categoryNames = {
-      HOTEL: "Mehmonxonalar",
-      RESTAURANT: "Restoranlar",
-      HOSTEL: "Hostellar",
-      DACHA: "Dachalar"
-    };
+    // 1. HAVOLANI TOZALASH (UTM, parametrlari va sleshlarni to'liq tozalash)
+    let cleanUrl = formData.url.trim();
+    try {
+      const urlToParse = cleanUrl.startsWith("http") ? cleanUrl : `https://${cleanUrl}`;
+      const parsed = new URL(urlToParse);
+      parsed.search = ""; // ?utm=... kabi barcha sorovlarni tozalaydi
+      parsed.hash = "";   // #section belgilarni tozalaydi
+      cleanUrl = parsed.toString();
+      if (cleanUrl.endsWith("/")) {
+        cleanUrl = cleanUrl.slice(0, -1);
+      }
+    } catch (e) {
+      cleanUrl = formData.url.split("?")[0];
+    }
 
-    const categoryLogos = {
-      HOTEL: "🏨",
-      RESTAURANT: "🍽️",
-      HOSTEL: "🛏️",
-      DACHA: "🏡"
-    };
-
-    let displayUrl = formData.url.replace("https://", "").replace("http://", "").replace("www.", "");
+    // Ekran uchun qisqa Display URL yaratish
+    let displayUrl = cleanUrl.replace("https://", "").replace("http://", "").replace("www.", "");
     if (displayUrl.length > 25) displayUrl = displayUrl.substring(0, 22) + "...";
 
-    const { error } = await supabase.from("properties").insert([
-      {
-        title: formData.title,
-        description: formData.description,
-        url: formData.url.startsWith("http") ? formData.url : `https://${formData.url}`,
-        display_url: displayUrl,
-        category: formData.category,
-        category_name: categoryNames[formData.category] || "Boshqa",
-        bid: Number(formData.bidAmount),
-        clicks: 0,
-        logo: categoryLogos[formData.category] || "🏢"
-      }
-    ]);
+    // 2. MAVJUD BRENDNI TEKSHIRISH (URL bo'yicha)
+    const { data: existingProp } = await supabase
+      .from("properties")
+      .select("*")
+      .eq("url", cleanUrl)
+      .maybeSingle();
 
-    if (error) {
-      alert("Xatolik yuz berdi: " + error.message);
+    if (existingProp) {
+      // Mavjud brend balansini oshirish (UPDATE)
+      const newBid = Number(existingProp.bid) + Number(formData.bidAmount);
+      
+      const { error } = await supabase
+        .from("properties")
+        .update({
+          bid: newBid,
+          title: formData.title || existingProp.title,
+          description: formData.description || existingProp.description
+        })
+        .eq("id", existingProp.id);
+
+      if (error) {
+        alert("Xatolik yuz berdi: " + error.message);
+      } else {
+        alert(`Mavjud brend balansi oshirildi! Yangi balans: ${newBid.toLocaleString("uz-UZ")} so'm`);
+        setIsModalOpen(false);
+        setFormData({
+          title: "",
+          url: "",
+          category: "HOTEL",
+          description: "",
+          bidAmount: 30000,
+          paymentMethod: "click"
+        });
+        fetchProperties();
+      }
     } else {
-      alert(`To'lov muvaffaqiyatli! Brendingiz saqlandi.`);
-      setIsModalOpen(false);
-      setFormData({
-        title: "",
-        url: "",
-        category: "HOTEL",
-        description: "",
-        bidAmount: 30000,
-        paymentMethod: "click"
-      });
-      fetchProperties();
+      // Yangi brend qo'shish (INSERT)
+      const categoryNames = {
+        HOTEL: "Mehmonxonalar",
+        RESTAURANT: "Restoranlar",
+        HOSTEL: "Hostellar",
+        DACHA: "Dachalar"
+      };
+
+      const { error } = await supabase.from("properties").insert([
+        {
+          title: formData.title,
+          description: formData.description,
+          url: cleanUrl,
+          display_url: displayUrl,
+          category: formData.category,
+          category_name: categoryNames[formData.category] || "Boshqa",
+          bid: Number(formData.bidAmount),
+          clicks: 0
+        }
+      ]);
+
+      if (error) {
+        alert("Xatolik yuz berdi: " + error.message);
+      } else {
+        alert(`To'lov muvaffaqiyatli! Brendingiz saqlandi.`);
+        setIsModalOpen(false);
+        setFormData({
+          title: "",
+          url: "",
+          category: "HOTEL",
+          description: "",
+          bidAmount: 30000,
+          paymentMethod: "click"
+        });
+        fetchProperties();
+      }
     }
   };
 
+  // BADGE SHAKLLARI
   const renderRankBadge = (rank) => {
     if (rank === 1) {
       return (
-        <div className="relative">
-          <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-xl animate-bounce">👑</div>
+        <div className="relative shrink-0">
+          <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-xl animate-bounce z-10">👑</div>
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-300 via-amber-500 to-yellow-600 text-slate-950 font-black text-lg flex items-center justify-center shadow-lg shadow-amber-500/30 border-2 border-amber-200">
             #1
           </div>
@@ -200,8 +249,8 @@ export default function Home() {
     }
     if (rank === 2) {
       return (
-        <div className="relative">
-          <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-lg">🥈</div>
+        <div className="relative shrink-0">
+          <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-lg z-10">🥈</div>
           <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-slate-200 via-slate-400 to-slate-500 text-slate-950 font-black text-base flex items-center justify-center shadow-md border border-slate-200">
             #2
           </div>
@@ -210,8 +259,8 @@ export default function Home() {
     }
     if (rank === 3) {
       return (
-        <div className="relative">
-          <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-lg">🥉</div>
+        <div className="relative shrink-0">
+          <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-lg z-10">🥉</div>
           <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-700 via-amber-800 to-amber-900 text-amber-200 font-black text-base flex items-center justify-center shadow-md border border-amber-600/50">
             #3
           </div>
@@ -219,10 +268,46 @@ export default function Home() {
       );
     }
     return (
-      <div className="w-10 h-10 rounded-xl bg-slate-800/80 border border-slate-700/80 text-slate-400 font-bold text-sm flex items-center justify-center">
+      <div className="w-10 h-10 rounded-xl bg-slate-800/80 border border-slate-700/80 text-slate-400 font-bold text-sm flex items-center justify-center shrink-0">
         #{rank}
       </div>
     );
+  };
+
+  // LOGOTIP OCHISH COMPONENTI (Xatoga chidamli)
+  const RenderLogo = ({ item }) => {
+    const [imgError, setImgError] = useState(false);
+
+    const getCategoryFallback = (category) => {
+      switch (category) {
+        case "HOTEL": return "🏨";
+        case "RESTAURANT": return "🍽️";
+        case "HOSTEL": return "🛏️";
+        case "DACHA": return "🏡";
+        default: return "🏢";
+      }
+    };
+
+    if (item.image_url && !imgError) {
+      return <img src={item.image_url} alt={item.title} onError={() => setImgError(true)} className="w-full h-full object-cover rounded-xl" />;
+    }
+
+    let tgUsername = null;
+    if (item.url?.includes("t.me/")) {
+      tgUsername = item.url.split("t.me/")[1]?.split("/")[0]?.replace("@", "");
+    } else if (item.url?.startsWith("@")) {
+      tgUsername = item.url.replace("@", "");
+    }
+
+    if (tgUsername && !imgError) {
+      return <img src={`https://t.me/i/userpic/300/${tgUsername}.jpg`} alt={item.title} onError={() => setImgError(true)} className="w-full h-full object-cover rounded-xl" />;
+    }
+
+    if (item.url && item.url.includes(".") && !imgError) {
+      return <img src={`https://www.google.com/s2/favicons?domain=${item.url}&sz=128`} alt={item.title} onError={() => setImgError(true)} className="w-6 h-6 object-contain" />;
+    }
+
+    return <span className="text-xl">{getCategoryFallback(item.category)}</span>;
   };
 
   if (!mounted) return null;
@@ -234,17 +319,17 @@ export default function Home() {
         {/* Header */}
         <header className="flex justify-between items-center px-6 py-4 border-b border-slate-800/80 max-w-6xl mx-auto backdrop-blur-md sticky top-0 z-40 bg-[#0a0c14]/80">
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 font-black text-2xl tracking-tight cursor-pointer select-none">
+            <Link href="/" className="flex items-center gap-1.5 font-black text-2xl tracking-tight cursor-pointer select-none">
               <span className="text-3xl">👑</span>
               <span className="bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">TAXT</span>
               <span className="text-slate-500 text-lg">.UZ</span>
-            </div>
+            </Link>
           </div>
 
           <nav className="flex items-center gap-6 text-sm text-slate-400 font-medium">
-            <a href="#" className="hover:text-amber-400 transition cursor-pointer">Reyting</a>
-            <a href="#" className="hover:text-amber-400 transition cursor-pointer">Haqida</a>
-            <a href="#" className="hover:text-amber-400 transition cursor-pointer">Qoidalar</a>
+            <Link href="/" className="text-amber-400 font-bold transition">Reyting</Link>
+            <Link href="/haqida" className="hover:text-amber-400 transition">Haqida</Link>
+            <Link href="/qoidalar" className="hover:text-amber-400 transition">Qoidalar</Link>
             <span className="text-xs bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-lg text-slate-300 cursor-pointer hover:border-slate-700 transition">uz <b>O'z</b></span>
           </nav>
         </header>
@@ -264,7 +349,7 @@ export default function Home() {
               HoReCa Taxti — O'z brendingizni cho'qqiga olib chiqing!
             </h1>
             <p className="text-slate-400 text-sm md:text-base max-w-xl mx-auto leading-relaxed">
-              Toshkentdagi eng mashhur maskanlarning jonli kimoshdi reytingi.
+              O'zbekistondagi eng mashhur maskanlarning jonli kimoshdi reytingi.
             </p>
           </div>
 
@@ -330,7 +415,6 @@ export default function Home() {
 
           {/* Kategoriya va Top-O'rinlar Filtrlari */}
           <div className="space-y-3 mb-6">
-            {/* Top joylashuv tugmalari (Top-3, Top-10 va h.k.) */}
             <div className="flex flex-wrap items-center gap-1.5 p-1.5 bg-slate-900/60 border border-slate-800/80 rounded-2xl">
               <span className="text-[11px] font-bold text-slate-500 px-2 uppercase tracking-wider">O'rinlar:</span>
               {[
@@ -354,7 +438,6 @@ export default function Home() {
               ))}
             </div>
 
-            {/* Kategoriya tugmalari */}
             <div className="flex flex-wrap gap-2">
               {[
                 { id: "ALL", label: "Barchasi", icon: "🔥" },
@@ -393,45 +476,55 @@ export default function Home() {
                       : "bg-slate-900/60 border-slate-800/80 hover:border-slate-700"
                   }`}>
                     
-                    <div className="flex items-start gap-4">
+                    {/* NISHON (BADGE) + LOGOTIP + MATN QISMI */}
+                    <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                      
+                      {/* 1. ORIGINAL O'RIN BADGE */}
                       <div className="pt-1">
                         {renderRankBadge(item.rank)}
                       </div>
 
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-xl">{item.logo}</span>
-                          <h3 className="font-bold text-base md:text-lg text-white">
-                            {item.title}
-                          </h3>
-                        </div>
+                      {/* 2. AVTOMATIK LOGOTIP */}
+                      <div className="w-12 h-12 rounded-2xl bg-slate-950 border border-slate-800/90 flex items-center justify-center shrink-0 overflow-hidden shadow-inner">
+                        <RenderLogo item={item} />
+                      </div>
 
-                        <p className="text-slate-400 text-xs md:text-sm mt-1 max-w-lg leading-snug">
-                          {item.description}
-                        </p>
+                      {/* 3. MATN QISMI */}
+                      <div className="min-w-0 space-y-0.5">
+                        <h3 className="font-bold text-base md:text-lg text-white truncate">
+                          {item.title}
+                        </h3>
+
+                        {item.description && (
+                          <p className="text-slate-400 text-xs md:text-sm truncate max-w-xs sm:max-w-md leading-snug">
+                            {item.description}
+                          </p>
+                        )}
                         
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 mt-2.5">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-slate-500 pt-1">
                           <a 
                             href={item.url} 
                             target="_blank" 
                             rel="noopener noreferrer"
                             onClick={() => handleLinkClick(item.id, item.clicks)}
-                            className="text-amber-400 hover:text-amber-300 active:text-amber-500 underline font-mono flex items-center gap-1 font-medium transition cursor-pointer">
+                            className="text-amber-400 hover:text-amber-300 active:text-amber-500 underline font-mono flex items-center gap-1 font-medium transition cursor-pointer truncate max-w-[150px] sm:max-w-none">
                             <span>{item.display_url || item.url}</span>
                             <span className="text-[10px]">↗</span>
                           </a>
                           
                           <span>•</span>
-                          <span className="bg-slate-800 text-slate-300 px-2 py-0.5 rounded text-[11px] font-medium">{item.category_name || item.category}</span>
+                          <span className="bg-slate-800 text-slate-300 px-2 py-0.5 rounded text-[11px] font-medium shrink-0">{item.category_name || item.category}</span>
                           <span>•</span>
                           
-                          <span className="text-emerald-400 font-semibold flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 select-none">
+                          <span className="text-emerald-400 font-semibold flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 select-none shrink-0">
                             <span>🔥</span> {item.clicks || 0} ta o'tish
                           </span>
                         </div>
                       </div>
+
                     </div>
 
+                    {/* O'NG QISM: PUL VA TUGMA */}
                     <div className="w-full md:w-auto flex md:flex-col justify-between items-end gap-2 border-t md:border-t-0 border-slate-800/80 pt-3 md:pt-0 shrink-0">
                       <div className="text-right">
                         <span className="text-base md:text-xl font-black text-amber-400">
@@ -458,7 +551,7 @@ export default function Home() {
             )}
           </div>
 
-          {/* Pul o'rniga yangilangan Statistika va Nufuz Bloki */}
+          {/* Statistika Bloki */}
           <div className="pt-8 border-t border-slate-800/80 text-center">
             <div className="bg-slate-900/90 border border-slate-800 p-6 md:p-8 rounded-3xl shadow-2xl backdrop-blur-md max-w-2xl mx-auto">
               <h3 className="text-base font-bold text-slate-200 mb-6 flex items-center justify-center gap-2">
@@ -495,13 +588,11 @@ export default function Home() {
       {/* Footer */}
       <footer className="border-t border-slate-800/80 py-6 text-center text-xs text-slate-500 mt-12">
         <div className="flex flex-wrap justify-center items-center gap-4 mb-2">
-          <a href="#" className="hover:text-amber-400 transition">Haqida</a>
+          <Link href="/haqida" className="hover:text-amber-400 transition">Haqida</Link>
           <span>•</span>
-          <a href="#" className="hover:text-amber-400 transition">Qoidalar</a>
+          <Link href="/qoidalar" className="hover:text-amber-400 transition">Qoidalar</Link>
           <span>•</span>
           <a href="#" className="hover:text-amber-400 transition">Oferta</a>
-          <span>•</span>
-          <a href="#" className="hover:text-amber-400 transition">Jonli statistika</a>
         </div>
         <p className="text-slate-600 text-[11px]">TAXT.UZ © 2026 — Barcha huquqlar himoyalangan</p>
       </footer>

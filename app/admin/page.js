@@ -54,7 +54,8 @@ export default function AdminPanel() {
         display_url: displayUrl,
         category: editingItem.category,
         bid: Number(editingItem.bid),
-        description: editingItem.description
+        description: editingItem.description,
+        image_url: editingItem.image_url || null // Rasm havolasini saqlash
       })
       .eq("id", editingItem.id);
 
@@ -158,7 +159,7 @@ export default function AdminPanel() {
             <table className="w-full text-left text-xs sm:text-sm text-slate-300">
               <thead className="bg-slate-800/80 text-amber-400 uppercase text-[11px] tracking-wider">
                 <tr>
-                  <th className="p-3.5">Brend Nomi va Ssilka</th>
+                  <th className="p-3.5">Logotip va Brend</th>
                   <th className="p-3.5">Kategoriya</th>
                   <th className="p-3.5">To'langan</th>
                   <th className="p-3.5">Sana va Vaqt</th>
@@ -170,10 +171,21 @@ export default function AdminPanel() {
                 {properties.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-800/40 transition">
                     <td className="p-3.5 font-bold text-white max-w-xs">
-                      <div className="text-sm">{item.title}</div>
-                      <a href={item.url} target="_blank" rel="noreferrer" className="text-amber-400 font-mono text-[11px] underline block truncate">
-                        {item.url}
-                      </a>
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-slate-800 border border-amber-500/20 overflow-hidden flex items-center justify-center shrink-0">
+                          {item.image_url ? (
+                            <img src={item.image_url} alt={item.title} className="w-full h-full object-cover" />
+                          ) : (
+                            <img src={`https://www.google.com/s2/favicons?domain=${item.url}&sz=64`} alt={item.title} className="w-5 h-5 object-contain" />
+                          )}
+                        </div>
+                        <div className="truncate">
+                          <div className="text-sm font-bold truncate">{item.title}</div>
+                          <a href={item.url} target="_blank" rel="noreferrer" className="text-amber-400 font-mono text-[11px] underline block truncate">
+                            {item.url}
+                          </a>
+                        </div>
+                      </div>
                     </td>
                     <td className="p-3.5">
                       <span className="bg-slate-800 text-slate-300 px-2 py-1 rounded text-xs">
@@ -236,6 +248,17 @@ export default function AdminPanel() {
                   type="text" 
                   value={editingItem.url} 
                   onChange={(e) => setEditingItem({...editingItem, url: e.target.value})}
+                  className="w-full bg-[#0a0c14] border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Logotip / Rasm URL (Ixtiyoriy):</label>
+                <input 
+                  type="text" 
+                  placeholder="https://example.com/logo.png"
+                  value={editingItem.image_url || ""} 
+                  onChange={(e) => setEditingItem({...editingItem, image_url: e.target.value})}
                   className="w-full bg-[#0a0c14] border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500 font-mono"
                 />
               </div>
